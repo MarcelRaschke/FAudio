@@ -1,6 +1,6 @@
 /* FAudio - XAudio Reimplementation for FNA
  *
- * Copyright (c) 2011-2020 Ethan Lee, Luigi Auriemma, and the MonoGame Team
+ * Copyright (c) 2011-2021 Ethan Lee, Luigi Auriemma, and the MonoGame Team
  *
  * This software is provided 'as-is', without any express or implied warranty.
  * In no event will the authors be held liable for any damages arising from
@@ -89,6 +89,10 @@ uint32_t FACTAudioEngine_Release(FACTAudioEngine *pEngine)
 	FAudio_PlatformDestroyMutex(pEngine->wbLock);
 	FAudio_PlatformUnlockMutex(pEngine->apiLock);
 	FAudio_PlatformDestroyMutex(pEngine->apiLock);
+	if (pEngine->settings != NULL)
+	{
+		pEngine->pFree(pEngine->settings);
+	}
 	pEngine->pFree(pEngine);
 	FAudio_PlatformRelease();
 	return 0;
@@ -163,13 +167,81 @@ uint32_t FACTAudioEngine_Initialize(
 
 	FAudio_PlatformLockMutex(pEngine->apiLock);
 
-	/* Parse the file */
-	parseRet = FACT_INTERNAL_ParseAudioEngine(pEngine, pParams);
-	if (parseRet != 0)
+	if (!pParams->pGlobalSettingsBuffer || pParams->globalSettingsBufferSize == 0)
 	{
-		FAudio_PlatformUnlockMutex(pEngine->apiLock);
-		return parseRet;
+		/* No file? Just go with a safe default. (Also why are you using XACT) */
+		pEngine->categoryCount = 3;
+		pEngine->variableCount = 0;
+		pEngine->rpcCount = 0;
+		pEngine->dspPresetCount = 0;
+		pEngine->dspParameterCount = 0;
+
+		pEngine->categories = (FACTAudioCategory*) pEngine->pMalloc(
+			sizeof(FACTAudioCategory) * pEngine->categoryCount
+		);
+		pEngine->categoryNames = (char**) pEngine->pMalloc(
+			sizeof(char*) * pEngine->categoryCount
+		);
+
+		pEngine->categoryNames[0] = pEngine->pMalloc(7);
+		FAudio_strlcpy(pEngine->categoryNames[0], "Global", 7);
+		pEngine->categories[0].instanceLimit = 255;
+		pEngine->categories[0].fadeInMS = 0;
+		pEngine->categories[0].fadeOutMS = 0;
+		pEngine->categories[0].maxInstanceBehavior = 0;
+		pEngine->categories[0].parentCategory = -1;
+		pEngine->categories[0].volume = 1.0f;
+		pEngine->categories[0].visibility = 1;
+		pEngine->categories[0].instanceCount = 0;
+		pEngine->categories[0].currentVolume = 1.0f;
+
+		pEngine->categoryNames[1] = pEngine->pMalloc(8);
+		FAudio_strlcpy(pEngine->categoryNames[1], "Default", 8);
+		pEngine->categories[1].instanceLimit = 255;
+		pEngine->categories[1].fadeInMS = 0;
+		pEngine->categories[1].fadeOutMS = 0;
+		pEngine->categories[1].maxInstanceBehavior = 0;
+		pEngine->categories[1].parentCategory = 0;
+		pEngine->categories[1].volume = 1.0f;
+		pEngine->categories[1].visibility = 1;
+		pEngine->categories[1].instanceCount = 0;
+		pEngine->categories[1].currentVolume = 1.0f;
+
+		pEngine->categoryNames[2] = pEngine->pMalloc(6);
+		FAudio_strlcpy(pEngine->categoryNames[2], "Music", 6);
+		pEngine->categories[2].instanceLimit = 255;
+		pEngine->categories[2].fadeInMS = 0;
+		pEngine->categories[2].fadeOutMS = 0;
+		pEngine->categories[2].maxInstanceBehavior = 0;
+		pEngine->categories[2].parentCategory = 0;
+		pEngine->categories[2].volume = 1.0f;
+		pEngine->categories[2].visibility = 1;
+		pEngine->categories[2].instanceCount = 0;
+		pEngine->categories[2].currentVolume = 1.0f;
+
+		pEngine->variables = NULL;
+		pEngine->variableNames = NULL;
+		pEngine->globalVariableValues = NULL;
+		pEngine->rpcs = NULL;
+		pEngine->dspPresets = NULL;
 	}
+	else
+	{
+		/* Parse the file */
+		parseRet = FACT_INTERNAL_ParseAudioEngine(pEngine, pParams);
+		if (parseRet != 0)
+		{
+			FAudio_PlatformUnlockMutex(pEngine->apiLock);
+			return parseRet;
+		}
+	}
+
+	/* Peristent Notifications */
+	pEngine->notifications = 0;
+	pEngine->cue_context = NULL;
+	pEngine->sb_context = NULL;
+	pEngine->wb_context = NULL;
+	pEngine->wave_context = NULL;
 
 	/* Assign the callbacks */
 	pEngine->notificationCallback = pParams->fnNotificationCallback;
@@ -505,7 +577,7 @@ uint32_t FACTAudioEngine_PrepareStreamingWave(
 	FACTStreamingParameters streamingParams,
 	uint32_t dwAlignment,
 	uint32_t *pdwSeekTable, /* Optional! */
-	uint8_t *pbWaveData,
+	uint8_t *pbWaveData, /* ABI bug, do not use! */
 	uint32_t dwPlayOffset,
 	uint8_t nLoopCount,
 	FACTWave **ppWave
@@ -524,7 +596,26 @@ uint32_t FACTAudioEngine_RegisterNotification(
 
 	FAudio_PlatformLockMutex(pEngine->apiLock);
 
-	if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_CUEDESTROYED)
+	#define HANDLE_PERSIST(nt) \
+		if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_##nt) \
+		{ \
+			if (pNotificationDescription->flags & FACT_FLAG_NOTIFICATION_PERSIST) \
+			{ \
+				pEngine->notifications |= NOTIFY_##nt; \
+				PERSIST_ACTION \
+			} \
+			else \
+			{ \
+				FAudio_assert(0 && "TODO: "#nt" notification!"); \
+			} \
+		}
+
+	/* Cues */
+	#define PERSIST_ACTION pEngine->cue_context = pNotificationDescription->pvContext;
+	HANDLE_PERSIST(CUEPREPARED)
+	else HANDLE_PERSIST(CUEPLAY)
+	else HANDLE_PERSIST(CUESTOP)
+	else if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_CUEDESTROYED)
 	{
 		if (pNotificationDescription->flags & FACT_FLAG_NOTIFICATION_PERSIST)
 		{
@@ -537,6 +628,14 @@ uint32_t FACTAudioEngine_RegisterNotification(
 			pNotificationDescription->pCue->usercontext = pNotificationDescription->pvContext;
 		}
 	}
+	#undef PERSIST_ACTION
+
+	/* Markers */
+	#define PERSIST_ACTION
+	else HANDLE_PERSIST(MARKER)
+	#undef PERSIST_ACTION
+
+	/* SoundBank/WaveBank Destruction */
 	else if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_SOUNDBANKDESTROYED)
 	{
 		if (pNotificationDescription->flags & FACT_FLAG_NOTIFICATION_PERSIST)
@@ -563,6 +662,21 @@ uint32_t FACTAudioEngine_RegisterNotification(
 			pNotificationDescription->pWaveBank->usercontext = pNotificationDescription->pvContext;
 		}
 	}
+
+	/* Variables, Auditioning Tool */
+	#define PERSIST_ACTION
+	else HANDLE_PERSIST(LOCALVARIABLECHANGED)
+	else HANDLE_PERSIST(GLOBALVARIABLECHANGED)
+	else HANDLE_PERSIST(GUICONNECTED)
+	else HANDLE_PERSIST(GUIDISCONNECTED)
+	#undef PERSIST_ACTION
+
+	/* Waves */
+	#define PERSIST_ACTION pEngine->wave_context = pNotificationDescription->pvContext;
+	else HANDLE_PERSIST(WAVEPREPARED)
+	else HANDLE_PERSIST(WAVEPLAY)
+	else HANDLE_PERSIST(WAVESTOP)
+	else HANDLE_PERSIST(WAVELOOPED)
 	else if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_WAVEDESTROYED)
 	{
 		if (pNotificationDescription->flags & FACT_FLAG_NOTIFICATION_PERSIST)
@@ -576,10 +690,20 @@ uint32_t FACTAudioEngine_RegisterNotification(
 			pNotificationDescription->pWave->usercontext = pNotificationDescription->pvContext;
 		}
 	}
+	#undef PERSIST_ACTION
+
+	/* WaveBanks */
+	#define PERSIST_ACTION pEngine->wb_context = pNotificationDescription->pvContext;
+	else HANDLE_PERSIST(WAVEBANKPREPARED)
+	#undef PERSIST_ACTION
+
+	/* Anything else? */
 	else
 	{
 		FAudio_assert(0 && "TODO: Unimplemented notification!");
 	}
+
+	#undef HANDLE_PERSIST
 
 	FAudio_PlatformUnlockMutex(pEngine->apiLock);
 	return 0;
@@ -595,7 +719,26 @@ uint32_t FACTAudioEngine_UnRegisterNotification(
 
 	FAudio_PlatformLockMutex(pEngine->apiLock);
 
-	if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_CUEDESTROYED)
+	#define HANDLE_PERSIST(nt) \
+		if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_##nt) \
+		{ \
+			if (pNotificationDescription->flags & FACT_FLAG_NOTIFICATION_PERSIST) \
+			{ \
+				pEngine->notifications &= ~NOTIFY_##nt; \
+				PERSIST_ACTION \
+			} \
+			else \
+			{ \
+				FAudio_assert(0 && "TODO: "#nt" notification!"); \
+			} \
+		}
+
+	/* Cues */
+	#define PERSIST_ACTION pEngine->cue_context = pNotificationDescription->pvContext;
+	HANDLE_PERSIST(CUEPREPARED)
+	else HANDLE_PERSIST(CUEPLAY)
+	else HANDLE_PERSIST(CUESTOP)
+	else if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_CUEDESTROYED)
 	{
 		if (pNotificationDescription->flags & FACT_FLAG_NOTIFICATION_PERSIST)
 		{
@@ -608,6 +751,14 @@ uint32_t FACTAudioEngine_UnRegisterNotification(
 			pNotificationDescription->pCue->usercontext = pNotificationDescription->pvContext;
 		}
 	}
+	#undef PERSIST_ACTION
+
+	/* Markers */
+	#define PERSIST_ACTION
+	else HANDLE_PERSIST(MARKER)
+	#undef PERSIST_ACTION
+
+	/* SoundBank/WaveBank Destruction */
 	else if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_SOUNDBANKDESTROYED)
 	{
 		if (pNotificationDescription->flags & FACT_FLAG_NOTIFICATION_PERSIST)
@@ -634,6 +785,21 @@ uint32_t FACTAudioEngine_UnRegisterNotification(
 			pNotificationDescription->pWaveBank->usercontext = pNotificationDescription->pvContext;
 		}
 	}
+
+	/* Variables, Auditioning Tool */
+	#define PERSIST_ACTION
+	else HANDLE_PERSIST(LOCALVARIABLECHANGED)
+	else HANDLE_PERSIST(GLOBALVARIABLECHANGED)
+	else HANDLE_PERSIST(GUICONNECTED)
+	else HANDLE_PERSIST(GUIDISCONNECTED)
+	#undef PERSIST_ACTION
+
+	/* Waves */
+	#define PERSIST_ACTION pEngine->wave_context = pNotificationDescription->pvContext;
+	else HANDLE_PERSIST(WAVEPREPARED)
+	else HANDLE_PERSIST(WAVEPLAY)
+	else HANDLE_PERSIST(WAVESTOP)
+	else HANDLE_PERSIST(WAVELOOPED)
 	else if (pNotificationDescription->type == FACTNOTIFICATIONTYPE_WAVEDESTROYED)
 	{
 		if (pNotificationDescription->flags & FACT_FLAG_NOTIFICATION_PERSIST)
@@ -647,10 +813,20 @@ uint32_t FACTAudioEngine_UnRegisterNotification(
 			pNotificationDescription->pWave->usercontext = pNotificationDescription->pvContext;
 		}
 	}
+	#undef PERSIST_ACTION
+
+	/* WaveBanks */
+	#define PERSIST_ACTION pEngine->wb_context = pNotificationDescription->pvContext;
+	else HANDLE_PERSIST(WAVEBANKPREPARED)
+	#undef PERSIST_ACTION
+
+	/* Anything else? */
 	else
 	{
 		FAudio_assert(0 && "TODO: Unimplemented notification!");
 	}
+
+	#undef HANDLE_PERSIST
 
 	FAudio_PlatformUnlockMutex(pEngine->apiLock);
 	return 0;
@@ -879,6 +1055,7 @@ uint16_t FACTSoundBank_GetCueIndex(
 	}
 
 	FAudio_PlatformLockMutex(pSoundBank->parentEngine->apiLock);
+	if (pSoundBank->cueNames != NULL)
 	for (i = 0; i < pSoundBank->cueCount; i += 1)
 	{
 		if (FAudio_strcmp(szFriendlyName, pSoundBank->cueNames[i]) == 0)
@@ -922,11 +1099,18 @@ uint32_t FACTSoundBank_GetCueProperties(
 
 	FAudio_PlatformLockMutex(pSoundBank->parentEngine->apiLock);
 
-	FAudio_strlcpy(
-		pProperties->friendlyName,
-		pSoundBank->cueNames[nCueIndex],
-		0xFF
-	);
+	if (pSoundBank->cueNames == NULL)
+	{
+		FAudio_zero(pProperties->friendlyName, 0xFF);
+	}
+	else
+	{
+		FAudio_strlcpy(
+			pProperties->friendlyName,
+			pSoundBank->cueNames[nCueIndex],
+			0xFF
+		);
+	}
 	if (!(pSoundBank->cues[nCueIndex].flags & 0x04))
 	{
 		for (i = 0; i < pSoundBank->variationCount; i += 1)
@@ -1066,7 +1250,10 @@ uint32_t FACTSoundBank_Play(
 	FACTCue *result;
 	if (pSoundBank == NULL)
 	{
-		*ppCue = NULL;
+		if (ppCue != NULL)
+		{
+			*ppCue = NULL;
+		}
 		return 1;
 	}
 
@@ -1105,7 +1292,10 @@ uint32_t FACTSoundBank_Play3D(
 	FACTCue *result;
 	if (pSoundBank == NULL)
 	{
-		*ppCue = NULL;
+		if (ppCue != NULL)
+		{
+			*ppCue = NULL;
+		}
 		return 1;
 	}
 
@@ -1278,11 +1468,14 @@ uint32_t FACTSoundBank_Destroy(FACTSoundBank *pSoundBank)
 	pSoundBank->parentEngine->pFree(pSoundBank->transitionCodes);
 
 	/* Cue Name data */
-	for (i = 0; i < pSoundBank->cueCount; i += 1)
+	if (pSoundBank->cueNames != NULL)
 	{
-		pSoundBank->parentEngine->pFree(pSoundBank->cueNames[i]);
+		for (i = 0; i < pSoundBank->cueCount; i += 1)
+		{
+			pSoundBank->parentEngine->pFree(pSoundBank->cueNames[i]);
+		}
+		pSoundBank->parentEngine->pFree(pSoundBank->cueNames);
 	}
-	pSoundBank->parentEngine->pFree(pSoundBank->cueNames);
 
 	/* Finally. */
 	if (pSoundBank->notifyOnDestroy || pSoundBank->parentEngine->notifications & NOTIFY_SOUNDBANKDESTROY)
@@ -1394,7 +1587,12 @@ uint32_t FACTWaveBank_Destroy(FACTWaveBank *pWaveBank)
 		}
 		pWaveBank->parentEngine->pFree(pWaveBank->seekTables);
 	}
-	FAudio_close(pWaveBank->io);
+
+	if (!pWaveBank->streaming)
+	{
+		FAudio_close(pWaveBank->io);
+	}
+
 	if (pWaveBank->packetBuffer != NULL)
 	{
 		pWaveBank->parentEngine->pFree(pWaveBank->packetBuffer);
@@ -1414,6 +1612,11 @@ uint32_t FACTWaveBank_Destroy(FACTWaveBank *pWaveBank)
 		pWaveBank->parentEngine->notificationCallback(&note);
 	}
 	FAudio_PlatformDestroyMutex(pWaveBank->waveLock);
+
+	if (pWaveBank->waveBankNames != NULL)
+	{
+		pWaveBank->parentEngine->pFree(pWaveBank->waveBankNames);
+	}
 
 	mutex = pWaveBank->parentEngine->apiLock;
 	pWaveBank->parentEngine->pFree(pWaveBank);
@@ -1470,8 +1673,26 @@ uint16_t FACTWaveBank_GetWaveIndex(
 	FACTWaveBank *pWaveBank,
 	const char *szFriendlyName
 ) {
-	FAudio_assert(0 && "WaveBank name tables are not supported!");
-	return 0;
+	uint16_t i;
+	char *curName;
+	if (pWaveBank == NULL || pWaveBank->waveBankNames == NULL)
+	{
+		return FACTINDEX_INVALID;
+	}
+
+	FAudio_PlatformLockMutex(pWaveBank->parentEngine->apiLock);
+	curName = pWaveBank->waveBankNames;
+	for (i = 0; i < pWaveBank->entryCount; i += 1, curName += 64)
+	{
+		if (FAudio_strncmp(szFriendlyName, curName, 64) == 0)
+		{
+			FAudio_PlatformUnlockMutex(pWaveBank->parentEngine->apiLock);
+			return i;
+		}
+	}
+	FAudio_PlatformUnlockMutex(pWaveBank->parentEngine->apiLock);
+
+	return FACTINDEX_INVALID;
 }
 
 uint32_t FACTWaveBank_GetWaveProperties(
@@ -1489,11 +1710,21 @@ uint32_t FACTWaveBank_GetWaveProperties(
 
 	entry = &pWaveBank->entries[nWaveIndex];
 
-	/* FIXME: Name tables! -flibit */
-	FAudio_zero(
-		pWaveProperties->friendlyName,
-		sizeof(pWaveProperties->friendlyName)
-	);
+	if (pWaveBank->waveBankNames)
+	{
+		FAudio_memcpy(
+			pWaveProperties->friendlyName,
+			&pWaveBank->waveBankNames[nWaveIndex * 64],
+			sizeof(pWaveProperties->friendlyName)
+		);
+	}
+	else
+	{
+		FAudio_zero(
+			pWaveProperties->friendlyName,
+			sizeof(pWaveProperties->friendlyName)
+		);
+	}
 
 	pWaveProperties->format = entry->Format;
 	pWaveProperties->durationInSamples = entry->PlayRegion.dwLength;
@@ -1509,6 +1740,10 @@ uint32_t FACTWaveBank_GetWaveProperties(
 			((entry->Format.wBlockAlign + 22) * entry->Format.nChannels) *
 			((entry->Format.wBlockAlign + 16) * 2)
 		);
+	}
+	else
+	{
+		FAudio_assert(0 && "Unrecognized wFormatTag!");
 	}
 
 	pWaveProperties->loopRegion = entry->LoopRegion;
@@ -1530,8 +1765,14 @@ uint32_t FACTWaveBank_Prepare(
 	FAudioBufferWMA bufferWMA;
 	FAudioVoiceSends sends;
 	FAudioSendDescriptor send;
-	FAudioADPCMWaveFormat format;
+	union
+	{
+		FAudioWaveFormatEx pcm;
+		FAudioADPCMWaveFormat adpcm;
+		FAudioXMA2WaveFormat xma2;
+	} format;
 	FACTWaveBankEntry *entry;
+	FACTSeekTable *seek;
 	if (pWaveBank == NULL)
 	{
 		*ppWave = NULL;
@@ -1576,38 +1817,78 @@ uint32_t FACTWaveBank_Prepare(
 	send.pOutputVoice = pWaveBank->parentEngine->master;
 	sends.SendCount = 1;
 	sends.pSends = &send;
-	format.wfx.nChannels = entry->Format.nChannels;
-	format.wfx.nSamplesPerSec = entry->Format.nSamplesPerSec;
+	format.pcm.nChannels = entry->Format.nChannels;
+	format.pcm.nSamplesPerSec = entry->Format.nSamplesPerSec;
 	if (entry->Format.wFormatTag == 0x0)
 	{
-		format.wfx.wFormatTag = FAUDIO_FORMAT_PCM;
-		format.wfx.wBitsPerSample = 8 << entry->Format.wBitsPerSample;
-		format.wfx.nBlockAlign = format.wfx.nChannels * format.wfx.wBitsPerSample / 8;
-		format.wfx.nAvgBytesPerSec = format.wfx.nBlockAlign * format.wfx.nSamplesPerSec;
-		format.wfx.cbSize = 0;
+		format.pcm.wFormatTag = FAUDIO_FORMAT_PCM;
+		format.pcm.wBitsPerSample = 8 << entry->Format.wBitsPerSample;
+		format.pcm.nBlockAlign = format.pcm.nChannels * format.pcm.wBitsPerSample / 8;
+		format.pcm.nAvgBytesPerSec = format.pcm.nBlockAlign * format.pcm.nSamplesPerSec;
+		format.pcm.cbSize = 0;
 	}
 	else if (entry->Format.wFormatTag == 0x1)
 	{
-		/* XMA2 is quite similar to WMA Pro. */
+		/* XMA2 is quite similar to WMA Pro... is what everyone thought.
+		 * What a great way to start this comment.
+		 *
+		 * Let's reconstruct the extra data because who knows what decoder we're dealing with in <present year>.
+		 * It's also a good exercise in understanding XMA2 metadata and feeding blocks into the decoder properly.
+		 * At the time of writing this patch, it's FFmpeg via gstreamer which doesn't even respect most of this.
+		 * ... which means: good luck to whoever ends up finding inaccuracies here in the future!
+		 *
+		 * dwLoopLength seems to match dwPlayLength in everything I've seen that had bLoopCount == 0.
+		 * dwLoopBegin can be > 0 even with bLoopCount == 0 because why not. Let's ignore that.
+		 *
+		 * dwSamplesEncoded is usually close to dwPlayLength but not always (if ever?) equal. Let's assume equality.
+		 * The XMA2 seek table uses sample indices as opposed to WMA's byte index seek table.
+		 *
+		 * nBlockAlign uses aWMABlockAlign given the entire WMA Pro thing BUT it's expected to be the block size for decoding.
+		 * The XMA2 block size MUST be a multiple of 2048 BUT entry->PlayRegion.dwLength / seek->entryCount doesn't respect that.
+		 * And even when correctly guesstimating the block size, we sometimes end up with block sizes >= 64k BYTES. nBlockAlign IS 16-BIT!
+		 * Scrap nBlockAlign. I've given up and made all FAudio gstreamer functions use dwBytesPerBlock if available.
+		 * Still though, if we don't want FAudio_INTERNAL_DecodeGSTREAMER to hang, the total data length must match (see SoundEffect.cs in FNA).
+		 * As such, we round up when guessing the block size, feed GStreamer with zeroes^Wundersized blocks and hope for the best.
+		 *
+		 * This is FUN.
+		 * -ade
+		 */
 		FAudio_assert(entry->Format.wBitsPerSample != 0);
 
-		format.wfx.wFormatTag = FAUDIO_FORMAT_XMAUDIO2;
-		format.wfx.nAvgBytesPerSec = aWMAAvgBytesPerSec[entry->Format.wBlockAlign >> 5];
-		format.wfx.nBlockAlign = aWMABlockAlign[entry->Format.wBlockAlign & 0x1F];
-		format.wfx.wBitsPerSample = 16;
-		format.wfx.cbSize = 0;
+		seek = &pWaveBank->seekTables[nWaveIndex];
+		format.pcm.wFormatTag = FAUDIO_FORMAT_XMAUDIO2;
+		format.pcm.wBitsPerSample = 16;
+		format.pcm.nAvgBytesPerSec = aWMAAvgBytesPerSec[entry->Format.wBlockAlign >> 5];
+		format.pcm.nBlockAlign = aWMABlockAlign[entry->Format.wBlockAlign & 0x1F];
+		format.pcm.cbSize = (
+			sizeof(FAudioXMA2WaveFormat) -
+			sizeof(FAudioWaveFormatEx)
+		);
+		format.xma2.wNumStreams = (format.pcm.nChannels + 1) / 2;
+		format.xma2.dwChannelMask = format.pcm.nChannels > 1 ? 0xFFFFFFFF >> (32 - format.pcm.nChannels) : 0;
+		format.xma2.dwSamplesEncoded = seek->entries[seek->entryCount - 1];
+		format.xma2.dwBytesPerBlock = (uint16_t) FAudio_ceil(
+			(double) entry->PlayRegion.dwLength /
+			(double) seek->entryCount /
+			2048.0
+		) * 2048;
+		format.xma2.dwPlayBegin = format.xma2.dwLoopBegin = 0;
+		format.xma2.dwPlayLength = format.xma2.dwLoopLength = format.xma2.dwSamplesEncoded;
+		format.xma2.bLoopCount = 0;
+		format.xma2.bEncoderVersion = 4;
+		format.xma2.wBlockCount = seek->entryCount;
 	}
 	else if (entry->Format.wFormatTag == 0x2)
 	{
-		format.wfx.wFormatTag = FAUDIO_FORMAT_MSADPCM;
-		format.wfx.nBlockAlign = (entry->Format.wBlockAlign + 22) * format.wfx.nChannels;
-		format.wfx.wBitsPerSample = 16;
-		format.wfx.cbSize = (
+		format.pcm.wFormatTag = FAUDIO_FORMAT_MSADPCM;
+		format.pcm.nBlockAlign = (entry->Format.wBlockAlign + 22) * format.pcm.nChannels;
+		format.pcm.wBitsPerSample = 16;
+		format.pcm.cbSize = (
 			sizeof(FAudioADPCMWaveFormat) -
 			sizeof(FAudioWaveFormatEx)
 		);
-		format.wSamplesPerBlock = (
-			((format.wfx.nBlockAlign / format.wfx.nChannels) - 6) * 2
+		format.adpcm.wSamplesPerBlock = (
+			((format.pcm.nBlockAlign / format.pcm.nChannels) - 6) * 2
 		);
 	}
 	else if (entry->Format.wFormatTag == 0x3)
@@ -1615,11 +1896,11 @@ uint32_t FACTWaveBank_Prepare(
 		/* Apparently this is used to detect WMA Pro...? */
 		FAudio_assert(entry->Format.wBitsPerSample == 0);
 
-		format.wfx.wFormatTag = FAUDIO_FORMAT_WMAUDIO2;
-		format.wfx.nAvgBytesPerSec = aWMAAvgBytesPerSec[entry->Format.wBlockAlign >> 5];
-		format.wfx.nBlockAlign = aWMABlockAlign[entry->Format.wBlockAlign & 0x1F];
-		format.wfx.wBitsPerSample = 16;
-		format.wfx.cbSize = 0;
+		format.pcm.wFormatTag = FAUDIO_FORMAT_WMAUDIO2;
+		format.pcm.nAvgBytesPerSec = aWMAAvgBytesPerSec[entry->Format.wBlockAlign >> 5];
+		format.pcm.nBlockAlign = aWMABlockAlign[entry->Format.wBlockAlign & 0x1F];
+		format.pcm.wBitsPerSample = 16;
+		format.pcm.cbSize = 0;
 	}
 	else
 	{
@@ -1635,11 +1916,11 @@ uint32_t FACTWaveBank_Prepare(
 	(*ppWave)->callback.callback.OnVoiceProcessingPassEnd = NULL;
 	(*ppWave)->callback.callback.OnVoiceProcessingPassStart = NULL;
 	(*ppWave)->callback.wave = *ppWave;
-	(*ppWave)->srcChannels = format.wfx.nChannels;
+	(*ppWave)->srcChannels = format.pcm.nChannels;
 	FAudio_CreateSourceVoice(
 		pWaveBank->parentEngine->audio,
 		&(*ppWave)->voice,
-		&format.wfx,
+		&format.pcm,
 		FAUDIO_VOICE_USEFILTER, /* FIXME: Can this be optional? */
 		4.0f,
 		(FAudioVoiceCallback*) &(*ppWave)->callback,
@@ -1649,19 +1930,19 @@ uint32_t FACTWaveBank_Prepare(
 	if (pWaveBank->streaming)
 	{
 		/* Init stream cache info */
-		if (format.wfx.wFormatTag == FAUDIO_FORMAT_PCM)
+		if (format.pcm.wFormatTag == FAUDIO_FORMAT_PCM)
 		{
 			(*ppWave)->streamSize = (
-				format.wfx.nSamplesPerSec *
-				format.wfx.nBlockAlign
+				format.pcm.nSamplesPerSec *
+				format.pcm.nBlockAlign
 			);
 		}
-		else if (format.wfx.wFormatTag == FAUDIO_FORMAT_MSADPCM)
+		else if (format.pcm.wFormatTag == FAUDIO_FORMAT_MSADPCM)
 		{
 			(*ppWave)->streamSize = (
-				format.wfx.nSamplesPerSec /
-				format.wSamplesPerBlock *
-				format.wfx.nBlockAlign
+				format.pcm.nSamplesPerSec /
+				format.adpcm.wSamplesPerBlock *
+				format.pcm.nBlockAlign
 			);
 		}
 		else
@@ -1671,7 +1952,7 @@ uint32_t FACTWaveBank_Prepare(
 
 			/* XACT does NOT support loop subregions for these formats */
 			FAudio_assert(entry->LoopRegion.dwStartSample == 0);
-			FAudio_assert(entry->LoopRegion.dwTotalSamples == entry->Duration);
+			FAudio_assert(entry->LoopRegion.dwTotalSamples == 0 || entry->LoopRegion.dwTotalSamples == entry->Duration);
 		}
 		(*ppWave)->streamCache = (uint8_t*) pWaveBank->parentEngine->pMalloc(
 			(*ppWave)->streamSize
@@ -1706,8 +1987,7 @@ uint32_t FACTWaveBank_Prepare(
 			buffer.LoopCount = nLoopCount;
 		}
 		buffer.pContext = NULL;
-		if (	format.wfx.wFormatTag == FAUDIO_FORMAT_WMAUDIO2 ||
-			format.wfx.wFormatTag == FAUDIO_FORMAT_XMAUDIO2	)
+		if (format.pcm.wFormatTag == FAUDIO_FORMAT_WMAUDIO2)
 		{
 			bufferWMA.pDecodedPacketCumulativeBytes =
 				pWaveBank->seekTables[nWaveIndex].entries;
@@ -1891,6 +2171,18 @@ uint32_t FACTWave_Stop(FACTWave *pWave, uint32_t dwFlags)
 		FAudioSourceVoice_ExitLoop(pWave->voice, 0);
 	}
 
+	if (pWave->parentBank->parentEngine->notifications & NOTIFY_WAVESTOP)
+	{
+		FACTNotification note;
+		note.type = FACTNOTIFICATIONTYPE_WAVESTOP;
+		note.wave.pWave = pWave;
+		if (pWave->parentBank->parentEngine->notifications & NOTIFY_WAVESTOP)
+		{
+			note.pvContext = pWave->parentBank->parentEngine->wave_context;
+		}
+		pWave->parentBank->parentEngine->notificationCallback(&note);
+	}
+
 	FAudio_PlatformUnlockMutex(pWave->parentBank->parentEngine->apiLock);
 	return 0;
 }
@@ -1990,13 +2282,11 @@ uint32_t FACTWave_SetMatrixCoefficients(
 	float *pMatrixCoefficients
 ) {
 	uint32_t i;
-	float *mtxDst, *mtxSrc;
+	float *mtxDst, *mtxSrc, *mtxTmp = NULL;
 	if (pWave == NULL)
 	{
 		return 1;
 	}
-
-	FAudio_PlatformLockMutex(pWave->parentBank->parentEngine->apiLock);
 
 	/* There seems to be this weird feature in XACT where the channel count
 	 * can be completely wrong and it'll go to the right place.
@@ -2007,20 +2297,31 @@ uint32_t FACTWave_SetMatrixCoefficients(
 	 */
 	if (uSrcChannelCount == 1 && pWave->srcChannels == 2)
 	{
-		mtxDst = pMatrixCoefficients + ((uDstChannelCount - 1) * 2);
-		mtxSrc = pMatrixCoefficients + (uDstChannelCount - 1);
+		mtxTmp = (float*) FAudio_alloca(
+			sizeof(float) *
+			pWave->srcChannels *
+			uDstChannelCount
+		);
+		mtxDst = mtxTmp;
+		mtxSrc = pMatrixCoefficients;
 		for (i = 0; i < uDstChannelCount; i += 1)
 		{
 			mtxDst[0] = *mtxSrc;
 			mtxDst[1] = *mtxSrc;
-			mtxDst -= 2;
-			mtxSrc -= 1;
+			mtxDst += 2;
+			mtxSrc += 1;
 		}
 		uSrcChannelCount = 2;
+		pMatrixCoefficients = mtxTmp;
 	}
 	else if (uSrcChannelCount == 2 && pWave->srcChannels == 1)
 	{
-		mtxDst = pMatrixCoefficients;
+		mtxTmp = (float*) FAudio_alloca(
+			sizeof(float) *
+			pWave->srcChannels *
+			uDstChannelCount
+		);
+		mtxDst = mtxTmp;
 		mtxSrc = pMatrixCoefficients;
 		for (i = 0; i < uDstChannelCount; i += 1)
 		{
@@ -2029,7 +2330,10 @@ uint32_t FACTWave_SetMatrixCoefficients(
 			mtxSrc += 2;
 		}
 		uSrcChannelCount = 1;
+		pMatrixCoefficients = mtxTmp;
 	}
+
+	FAudio_PlatformLockMutex(pWave->parentBank->parentEngine->apiLock);
 
 	FAudioVoice_SetOutputMatrix(
 		pWave->voice,
@@ -2041,6 +2345,10 @@ uint32_t FACTWave_SetMatrixCoefficients(
 	);
 
 	FAudio_PlatformUnlockMutex(pWave->parentBank->parentEngine->apiLock);
+	if (mtxTmp != NULL)
+	{
+		FAudio_dealloca(mtxTmp);
+	}
 	return 0;
 }
 
@@ -2162,6 +2470,9 @@ uint32_t FACTCue_Play(FACTCue *pCue)
 				FACT_STATE_STOPPING |
 				FACT_STATE_PAUSED
 			);
+
+			FACT_INTERNAL_SendCueNotification(pCue, NOTIFY_CUESTOP, FACTNOTIFICATIONTYPE_CUESTOP);
+
 			FAudio_PlatformUnlockMutex(
 				pCue->parentBank->parentEngine->apiLock
 			);
@@ -2260,6 +2571,9 @@ uint32_t FACTCue_Play(FACTCue *pCue)
 		FACT_STATE_STOPPED |
 		FACT_STATE_PREPARED
 	);
+
+	FACT_INTERNAL_SendCueNotification(pCue, NOTIFY_CUEPLAY, FACTNOTIFICATIONTYPE_CUEPLAY);
+
 	pCue->start = FAudio_timems();
 
 	/* If it's a simple wave, just play it! */
@@ -2358,8 +2672,11 @@ uint32_t FACTCue_Stop(FACTCue *pCue, uint32_t dwFlags)
 				pCue->maxRpcReleaseTime
 			);
 		}
-
-		pCue->state |= FACT_STATE_STOPPING;
+		else
+		{
+			/* Pretty sure this doesn't happen, but just in case? */
+			pCue->state |= FACT_STATE_STOPPING;
+		}
 	}
 
 	FAudio_PlatformUnlockMutex(pCue->parentBank->parentEngine->apiLock);

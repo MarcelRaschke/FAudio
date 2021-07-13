@@ -1,14 +1,15 @@
 # CMake Project for FAudio
 # Written by @NeroBurner
 cmake_minimum_required(VERSION 2.8.12)
-project(FAudio)
+project(FAudio C)
 
 # Options
-option(FFMPEG "Enable FFmpeg support (WMA, XMA)" OFF)
+option(GSTREAMER "Enable GStreamer support (WMA, XMA)" OFF)
 option(BUILD_UTILS "Build utils/ folder" OFF)
 option(BUILD_TESTS "Build tests/ folder for unit tests to be executed on the host against FAudio" OFF)
 if(WIN32)
 option(BUILD_CPP "Build cpp/ folder (COM wrapper for XAudio2)" OFF)
+option(PLATFORM_WIN32 "Enable native Win32 platform instead of SDL2" OFF)
 endif()
 option(XNASONG "Build with XNA_Song.c" ON)
 option(LOG_ASSERTIONS "Bind FAudio_assert to log, instead of platform's assert" OFF)
@@ -29,8 +30,8 @@ endif()
 
 # Version
 SET(LIB_MAJOR_VERSION "0")
-SET(LIB_MINOR_VERSION "20")
-SET(LIB_REVISION "03")
+SET(LIB_MINOR_VERSION "21")
+SET(LIB_REVISION "07")
 SET(LIB_VERSION "${LIB_MAJOR_VERSION}.${LIB_MINOR_VERSION}.${LIB_REVISION}")
 
 # Build Type
@@ -52,6 +53,7 @@ set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
 # Platform Flags
 if(APPLE)
+	set(CMAKE_MACOSX_RPATH ON)
 	set(CMAKE_OSX_DEPLOYMENT_TARGET 10.9)
 elseif(WIN32)
 	# "FAudio.dll", not "libFAudio.dll"
@@ -97,10 +99,22 @@ add_library(FAudio
 	src/FAudio_internal_simd.c
 	src/FAudio_operationset.c
 	src/FAudio_platform_sdl2.c
+	src/FAudio_platform_win32.c
 	# Optional source files
 	src/XNA_Song.c
-	src/FAudio_ffmpeg.c
+	src/FAudio_gstreamer.c
 )
+
+if(PLATFORM_WIN32)
+	target_link_libraries(FAudio PRIVATE -ldxguid -luuid -lwinmm -lole32 -ladvapi32 -luser32 -lmfplat -lmfreadwrite -lmfuuid -lpropsys)
+	target_compile_definitions(FAudio PUBLIC FAUDIO_WIN32_PLATFORM)
+	target_compile_definitions(FAudio PRIVATE HAVE_WMADEC=1)
+	set(PLATFORM_CFLAGS "-DFAUDIO_WIN32_PLATFORM")
+	set(GSTREAMER OFF)
+	set(XNASONG OFF)
+else()
+	set(PLATFORM_CFLAGS)
+endif()
 
 # Only disable DebugConfiguration in release builds
 if(NOT FORCE_ENABLE_DEBUGCONFIGURATION)
@@ -134,28 +148,34 @@ if(NOT XNASONG)
 	target_compile_definitions(FAudio PRIVATE DISABLE_XNASONG)
 endif()
 
-# FFmpeg Support
-if(FFMPEG)
+# GStreamer Support
+if(GSTREAMER)
+	# Requires for gstreamer in the pkgconfig file
+	set(FAUDIO_GSTREAMER_DEPS " gstreamer-app-1.0 gstreamer-audio-1.0")
+
 	# Add the extra definition...
-	target_compile_definitions(FAudio PRIVATE HAVE_FFMPEG=1)
+	target_compile_definitions(FAudio PRIVATE HAVE_WMADEC=1 HAVE_GSTREAMER=1)
 
-	# Find FFmpeg...
-	find_package(FFmpeg COMPONENTS
-		avcodec
-		avutil # dep of avcodec
-		swresample # dep of avcodec
-		REQUIRED
+	# Find GStreamer
+	find_package(PkgConfig)
+	pkg_check_modules(GST REQUIRED gstreamer-1.0>=1.9.2)
+	pkg_check_modules(GSTAUDIO REQUIRED gstreamer-audio-1.0>=1.9.2)
+	pkg_check_modules(GSTAPP REQUIRED gstreamer-app-1.0>=1.9.2)
+
+	# Include/Link GStreamer...
+	target_include_directories(FAudio PRIVATE
+		${GST_INCLUDE_DIRS}
+		${GSTAUDIO_INCLUDE_DIRS}
+		${GSTAPP_INCLUDE_DIRS}
 	)
-
-	# Include/Link FFmpeg...
-	target_include_directories(FAudio PRIVATE ${FFmpeg_INCLUDE_DIRS})
-	target_link_libraries(FAudio PRIVATE ${FFmpeg_LIBRARIES})
-
-	# Install FFmpeg for MinGW target
-	if(INSTALL_MINGW_DEPENDENCIES)
-		install_shared_libs(FILES ${FFmpeg_LIBRARIES} DESTINATION bin NO_INSTALL_SYMLINKS REQUIRED)
-	endif()
-endif(FFMPEG)
+	target_link_libraries(FAudio PRIVATE
+            ${GST_LDFLAGS}
+            ${GSTAUDIO_LDFLAGS}
+            ${GSTAPP_LDFLAGS}
+        )
+else()
+	set(FAUDIO_GSTREAMER_DEPS "")
+endif(GSTREAMER)
 
 # Dump source voices to RIFF WAVE files
 if(DUMP_VOICES)
@@ -163,7 +183,9 @@ if(DUMP_VOICES)
 endif()
 
 # SDL2 Dependency
-if (DEFINED SDL2_INCLUDE_DIRS AND DEFINED SDL2_LIBRARIES)
+if (PLATFORM_WIN32)
+	message(STATUS "not using SDL2")
+elseif (DEFINED SDL2_INCLUDE_DIRS AND DEFINED SDL2_LIBRARIES)
 	message(STATUS "using pre-defined SDL2 variables SDL2_INCLUDE_DIRS and SDL2_LIBRARIES")
 	target_include_directories(FAudio PUBLIC "$<BUILD_INTERFACE:${SDL2_INCLUDE_DIRS}>")
 	target_link_libraries(FAudio PUBLIC ${SDL2_LIBRARIES})
@@ -197,6 +219,8 @@ endif()
 
 # utils/ Folder
 if(BUILD_UTILS)
+	enable_language(CXX)
+
 	# Shared ImGui Framework
 	add_library(uicommon STATIC
 		utils/uicommon/FAudioUI_main.cpp
@@ -207,11 +231,12 @@ if(BUILD_UTILS)
 		utils/uicommon/imgui.cpp
 		utils/uicommon/imgui_demo.cpp
 		utils/uicommon/imgui_draw.cpp
+		utils/uicommon/imgui_widgets.cpp
 		utils/uicommon/imgui.h
 		utils/uicommon/imgui_internal.h
-		utils/uicommon/stb_rect_pack.h
-		utils/uicommon/stb_textedit.h
-		utils/uicommon/stb_truetype.h
+		utils/uicommon/imstb_rectpack.h
+		utils/uicommon/imstb_textedit.h
+		utils/uicommon/imstb_truetype.h
 	)
 	target_link_libraries(uicommon PUBLIC FAudio)
 
@@ -278,6 +303,8 @@ endif()
 
 # cpp/ Folder
 if(BUILD_CPP)
+	enable_language(CXX)
+
 	# XAPOBase, used by XAudio2 and XAPOFX
 	add_library(XAPOBase STATIC
 		cpp/XAPOBase.cpp
@@ -434,15 +461,29 @@ install(
 	ARCHIVE DESTINATION ${FAudio_INSTALL_LIBDIR}
 )
 
+# Generate a pkgconfig file
+include(cmake/JoinPaths.cmake)
+join_paths(FAUDIO_PKGCONF_LIBDIR "\${prefix}" "${CMAKE_INSTALL_LIBDIR}")
+join_paths(FAUDIO_PKGCONF_INCLUDEDIR "\${prefix}" "${CMAKE_INSTALL_INCLUDEDIR}")
+configure_file(
+	"${PROJECT_SOURCE_DIR}/cmake/${PROJECT_NAME}.pc.in"
+	${PROJECT_BINARY_DIR}/generated/${PROJECT_NAME}.pc
+	@ONLY
+)
+install(
+	FILES ${CMAKE_CURRENT_BINARY_DIR}/generated/${PROJECT_NAME}.pc
+	DESTINATION ${FAudio_INSTALL_LIBDIR}/pkgconfig
+)
+
 # Generate cmake-config file, install CMake files
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
 	cmake/config.cmake.in
-	${CMAKE_CURRENT_BINARY_DIR}/generated/${PROJECT_NAME}-config.cmake
+	${CMAKE_CURRENT_BINARY_DIR}/generated/${PROJECT_NAME}Config.cmake
 	INSTALL_DESTINATION ${FAudio_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
 install(
-	FILES ${CMAKE_CURRENT_BINARY_DIR}/generated/${PROJECT_NAME}-config.cmake
+	FILES ${CMAKE_CURRENT_BINARY_DIR}/generated/${PROJECT_NAME}Config.cmake
 	DESTINATION ${FAudio_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
 install(
