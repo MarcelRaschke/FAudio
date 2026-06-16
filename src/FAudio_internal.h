@@ -315,8 +315,8 @@ typedef void (FAUDIOCALL * FAudioDecodeCallback)(FAudioVoice *voice,
 	const void *src, float *dst, uint32_t block_offset, uint32_t sample_count);
 
 typedef void (FAUDIOCALL * FAudioResampleCallback)(
-	float *restrict dCache,
-	float *restrict resampleCache,
+	float *restrict src,
+	float *restrict dst,
 	uint64_t *resampleOffset,
 	uint64_t resampleStep,
 	uint64_t toResample,
@@ -443,9 +443,9 @@ struct FAudio
 	uint32_t decodeSamples;
 	uint32_t resampleSamples;
 	uint32_t effectChainSamples;
-	float *decodeCache;
-	float *resampleCache;
-	float *effectChainCache;
+	float *decoded_audio;
+	float *resampled_audio;
+	float *effect_output;
 
 	/* Allocator callbacks */
 	FAudioMallocFunc pMalloc;
@@ -554,7 +554,7 @@ struct FAudioVoice
 			/* Sample storage */
 			uint32_t inputSamples;
 			uint32_t outputSamples;
-			float *inputCache;
+			float *input;
 			uint64_t resampleStep;
 			FAudioResampleCallback resample;
 
@@ -569,7 +569,7 @@ struct FAudioVoice
 			float *output;
 
 			/* Needed when inputChannels != outputChannels */
-			float *effectCache;
+			float *effect_input;
 
 			/* Read-only */
 			uint32_t inputChannels;
@@ -586,7 +586,7 @@ void FAudio_INTERNAL_InsertSubmixSorted(
 	FAudioMallocFunc pMalloc
 );
 void FAudio_INTERNAL_UpdateEngine(FAudio *audio, float *output);
-void FAudio_INTERNAL_ResizeDecodeCache(FAudio *audio, uint32_t size);
+void resize_decoded_audio_buffer(FAudio *audio, uint32_t size);
 void FAudio_INTERNAL_AllocEffectChain(
 	FAudioVoice *voice,
 	const FAudioEffectChain *pEffectChain
@@ -741,8 +741,8 @@ extern void (*FAudio_INTERNAL_Convert_S32_To_F32)(
 extern FAudioResampleCallback FAudio_INTERNAL_ResampleMono;
 extern FAudioResampleCallback FAudio_INTERNAL_ResampleStereo;
 extern void FAudio_INTERNAL_ResampleGeneric(
-	float *restrict dCache,
-	float *restrict resampleCache,
+	float *restrict src,
+	float *restrict dst,
 	uint64_t *resampleOffset,
 	uint64_t resampleStep,
 	uint64_t toResample,
