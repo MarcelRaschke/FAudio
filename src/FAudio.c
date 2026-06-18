@@ -2932,10 +2932,6 @@ uint32_t FAudioSourceVoice_FlushSourceBuffers(
 	{
 		offset = 1;
 	}
-	else
-	{
-		voice->src.curBufferOffset = 0;
-	}
 
 	if (voice->src.queued_buffer_count > offset)
 	{
