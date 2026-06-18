@@ -925,12 +925,16 @@ static inline void WriteWaveFormatExtensible(
 #define FIXED_INTEGER_MASK	~FIXED_FRACTION_MASK
 
 /* Helper macros to convert fixed to float */
-#define DOUBLE_TO_FIXED(dbl) \
-	((uint64_t) (dbl * FIXED_ONE + 0.5))
-#define FIXED_TO_FLOAT(fxd) ( \
-	(float) (fxd >> FIXED_PRECISION) + /* Integer part */ \
-	((fxd & FIXED_FRACTION_MASK) * (1.0f / FIXED_ONE)) /* Fraction part */ \
-)
+static inline uint64_t double_to_fixed(double dbl)
+{
+	return (dbl * FIXED_ONE + 0.5);
+}
+
+static inline float fixed_to_float(uint64_t fxd)
+{
+	return (float)(fxd >> FIXED_PRECISION) + /* Integer part */
+		((fxd & FIXED_FRACTION_MASK) * (1.0f / FIXED_ONE)); /* Fraction part */
+}
 
 #ifdef FAUDIO_DUMP_VOICES
 /* File writing structure */

@@ -965,7 +965,7 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 			(double) voice->src.format->nSamplesPerSec /
 			(double) outputRate
 		);
-		voice->src.resampleStep = DOUBLE_TO_FIXED(stepd);
+		voice->src.resampleStep = double_to_fixed(stepd);
 		voice->src.resampleFreq = voice->src.freqRatio * voice->src.format->nSamplesPerSec;
 	}
 
@@ -1750,7 +1750,7 @@ uint32_t FAudio_INTERNAL_VoiceOutputFrequency(
 		}
 		voice->mix.outputSamples = newResampleSamples;
 
-		voice->mix.resampleStep = DOUBLE_TO_FIXED((
+		voice->mix.resampleStep = double_to_fixed((
 			(double) voice->mix.inputSampleRate /
 			(double) outSampleRate
 		));

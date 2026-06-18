@@ -398,7 +398,7 @@ void FAudio_INTERNAL_ResampleGeneric(
 			*dst++ = (float) (
 				src[j] +
 				(src[j + channels] - src[j]) *
-				FIXED_TO_FLOAT(cur)
+				fixed_to_float(cur)
 			);
 		}
 
@@ -436,7 +436,7 @@ void FAudio_INTERNAL_ResampleMono_Scalar(
 		*dst++ = (float) (
 			src[0] +
 			(src[1] - src[0]) *
-			FIXED_TO_FLOAT(cur)
+			fixed_to_float(cur)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -472,12 +472,12 @@ void FAudio_INTERNAL_ResampleStereo_Scalar(
 		*dst++ = (float) (
 			src[0] +
 			(src[2] - src[0]) *
-			FIXED_TO_FLOAT(cur)
+			fixed_to_float(cur)
 		);
 		*dst++ = (float) (
 			src[1] +
 			(src[3] - src[1]) *
-			FIXED_TO_FLOAT(cur)
+			fixed_to_float(cur)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -529,7 +529,7 @@ void FAudio_INTERNAL_ResampleMono_SSE2(
 		*dst++ = (float) (
 			src[0] +
 			(src[1] - src[0]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -558,7 +558,7 @@ void FAudio_INTERNAL_ResampleMono_SSE2(
 	 * the 0.5 is added later.
 	 */
 	cur_frac = _mm_set1_epi32(
-		(uint32_t) (cur_scalar & FIXED_FRACTION_MASK) - DOUBLE_TO_FIXED(0.5)
+		(uint32_t) (cur_scalar & FIXED_FRACTION_MASK) - double_to_fixed(0.5)
 	);
 	adder_frac = _mm_setr_epi32(
 		0,
@@ -651,7 +651,7 @@ void FAudio_INTERNAL_ResampleMono_SSE2(
 		*dst++ = (float) (
 			src[0] +
 			(src[1] - src[0]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 		
 		/* Increment fraction offset by the stepping value */
@@ -699,12 +699,12 @@ void FAudio_INTERNAL_ResampleStereo_SSE2(
 		*dst++ = (float) (
 			src[0] +
 			(src[2] - src[0]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 		*dst++ = (float) (
 			src[1] +
 			(src[3] - src[1]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -731,7 +731,7 @@ void FAudio_INTERNAL_ResampleStereo_SSE2(
 	 * explanation.
 	 */
 	cur_frac = _mm_set1_epi32(
-		(uint32_t) (cur_scalar & FIXED_FRACTION_MASK) - DOUBLE_TO_FIXED(0.5)
+		(uint32_t) (cur_scalar & FIXED_FRACTION_MASK) - double_to_fixed(0.5)
 	);
 	adder_frac = _mm_setr_epi32(
 		0,
@@ -815,12 +815,12 @@ void FAudio_INTERNAL_ResampleStereo_SSE2(
 		*dst++ = (float) (
 			src[0] +
 			(src[2] - src[0]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 		*dst++ = (float) (
 			src[1] +
 			(src[3] - src[1]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -870,7 +870,7 @@ void FAudio_INTERNAL_ResampleMono_NEON(
 		*dst++ = (float) (
 			src[0] +
 			(src[1] - src[0]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -899,7 +899,7 @@ void FAudio_INTERNAL_ResampleMono_NEON(
 	 * the 0.5 is added later.
 	 */
 	cur_frac = vdupq_n_s32(
-		(uint32_t) (cur_scalar & FIXED_FRACTION_MASK) - DOUBLE_TO_FIXED(0.5)
+		(uint32_t) (cur_scalar & FIXED_FRACTION_MASK) - double_to_fixed(0.5)
 	);
 	ALIGN(int32_t, 16) data[4] =
 	{
@@ -993,7 +993,7 @@ void FAudio_INTERNAL_ResampleMono_NEON(
 		*dst++ = (float) (
 			src[0] +
 			(src[1] - src[0]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -1040,12 +1040,12 @@ void FAudio_INTERNAL_ResampleStereo_NEON(
 		*dst++ = (float) (
 			src[0] +
 			(src[2] - src[0]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 		*dst++ = (float) (
 			src[1] +
 			(src[3] - src[1]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -1072,7 +1072,7 @@ void FAudio_INTERNAL_ResampleStereo_NEON(
 	 * explanation.
 	 */
 	cur_frac = vdupq_n_s32(
-		(uint32_t) (cur_scalar & FIXED_FRACTION_MASK) - DOUBLE_TO_FIXED(0.5)
+		(uint32_t) (cur_scalar & FIXED_FRACTION_MASK) - double_to_fixed(0.5)
 	);
 	ALIGN(int32_t, 16) data[4] =
 	{
@@ -1150,12 +1150,12 @@ void FAudio_INTERNAL_ResampleStereo_NEON(
 		*dst++ = (float) (
 			src[0] +
 			(src[2] - src[0]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 		*dst++ = (float) (
 			src[1] +
 			(src[3] - src[1]) *
-			FIXED_TO_FLOAT(cur_scalar)
+			fixed_to_float(cur_scalar)
 		);
 
 		/* Increment fraction offset by the stepping value */
