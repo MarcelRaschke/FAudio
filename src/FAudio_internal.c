@@ -536,6 +536,7 @@ static void end_buffer(FAudioSourceVoice *voice)
 
 	if (eos)
 	{
+		voice->src.resampleOffset = 0;
 		voice->src.curBufferOffsetDec = 0;
 		voice->src.totalSamples = 0;
 	}
