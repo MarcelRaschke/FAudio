@@ -393,14 +393,7 @@ void FAudio_INTERNAL_ResampleGeneric(
 	for (i = 0; i < toResample; i += 1)
 	{
 		for (j = 0; j < channels; j += 1)
-		{
-			/* lerp, then convert to float value */
-			*dst++ = (float) (
-				src[j] +
-				(src[j + channels] - src[j]) *
-				fixed_to_float(cur)
-			);
-		}
+			*dst++ = lerp(src[j], src[j + channels], fixed_to_float(cur));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -432,12 +425,7 @@ void FAudio_INTERNAL_ResampleMono_Scalar(
 	uint64_t cur = *resampleOffset & FIXED_FRACTION_MASK;
 	for (i = 0; i < toResample; i += 1)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[1] - src[0]) *
-			fixed_to_float(cur)
-		);
+		*dst++ = lerp(src[0], src[1], fixed_to_float(cur));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -468,17 +456,8 @@ void FAudio_INTERNAL_ResampleStereo_Scalar(
 	uint64_t cur = *resampleOffset & FIXED_FRACTION_MASK;
 	for (i = 0; i < toResample; i += 1)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[2] - src[0]) *
-			fixed_to_float(cur)
-		);
-		*dst++ = (float) (
-			src[1] +
-			(src[3] - src[1]) *
-			fixed_to_float(cur)
-		);
+		*dst++ = lerp(src[0], src[2], fixed_to_float(cur));
+		*dst++ = lerp(src[1], src[3], fixed_to_float(cur));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -525,12 +504,7 @@ void FAudio_INTERNAL_ResampleMono_SSE2(
 	}
 	for (i = 0; i < header; i += 1)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[1] - src[0]) *
-			fixed_to_float(cur_scalar)
-		);
+		*dst++ = lerp(src[0], src[1], fixed_to_float(cur_scalar));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -647,13 +621,8 @@ void FAudio_INTERNAL_ResampleMono_SSE2(
 	/* This is the tail. */
 	for (i = 0; i < tail; i += 1)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[1] - src[0]) *
-			fixed_to_float(cur_scalar)
-		);
-		
+		*dst++ = lerp(src[0], src[1], fixed_to_float(cur_scalar));
+
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
 		cur_scalar += resampleStep;
@@ -695,17 +664,8 @@ void FAudio_INTERNAL_ResampleStereo_SSE2(
 	cur_scalar = *resampleOffset & FIXED_FRACTION_MASK;
 	for (i = 0; i < header; i += 2)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[2] - src[0]) *
-			fixed_to_float(cur_scalar)
-		);
-		*dst++ = (float) (
-			src[1] +
-			(src[3] - src[1]) *
-			fixed_to_float(cur_scalar)
-		);
+		*dst++ = lerp(src[0], src[2], fixed_to_float(cur_scalar));
+		*dst++ = lerp(src[1], src[3], fixed_to_float(cur_scalar));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -811,17 +771,8 @@ void FAudio_INTERNAL_ResampleStereo_SSE2(
 	/* This is the tail. */
 	for (i = 0; i < tail; i += 1)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[2] - src[0]) *
-			fixed_to_float(cur_scalar)
-		);
-		*dst++ = (float) (
-			src[1] +
-			(src[3] - src[1]) *
-			fixed_to_float(cur_scalar)
-		);
+		*dst++ = lerp(src[0], src[2], fixed_to_float(cur_scalar));
+		*dst++ = lerp(src[1], src[3], fixed_to_float(cur_scalar));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -866,12 +817,7 @@ void FAudio_INTERNAL_ResampleMono_NEON(
 	}
 	for (i = 0; i < header; i += 1)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[1] - src[0]) *
-			fixed_to_float(cur_scalar)
-		);
+		*dst++ = lerp(src[0], src[1], fixed_to_float(cur_scalar));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -989,12 +935,7 @@ void FAudio_INTERNAL_ResampleMono_NEON(
 	/* This is the tail. */
 	for (i = 0; i < tail; i += 1)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[1] - src[0]) *
-			fixed_to_float(cur_scalar)
-		);
+		*dst++ = lerp(src[0], src[1], fixed_to_float(cur_scalar));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -1036,17 +977,8 @@ void FAudio_INTERNAL_ResampleStereo_NEON(
 	cur_scalar = *resampleOffset & FIXED_FRACTION_MASK;
 	for (i = 0; i < header; i += 2)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[2] - src[0]) *
-			fixed_to_float(cur_scalar)
-		);
-		*dst++ = (float) (
-			src[1] +
-			(src[3] - src[1]) *
-			fixed_to_float(cur_scalar)
-		);
+		*dst++ = lerp(src[0], src[2], fixed_to_float(cur_scalar));
+		*dst++ = lerp(src[1], src[3], fixed_to_float(cur_scalar));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;
@@ -1146,17 +1078,8 @@ void FAudio_INTERNAL_ResampleStereo_NEON(
 	/* This is the tail. */
 	for (i = 0; i < tail; i += 1)
 	{
-		/* lerp, then convert to float value */
-		*dst++ = (float) (
-			src[0] +
-			(src[2] - src[0]) *
-			fixed_to_float(cur_scalar)
-		);
-		*dst++ = (float) (
-			src[1] +
-			(src[3] - src[1]) *
-			fixed_to_float(cur_scalar)
-		);
+		*dst++ = lerp(src[0], src[2], fixed_to_float(cur_scalar));
+		*dst++ = lerp(src[1], src[3], fixed_to_float(cur_scalar));
 
 		/* Increment fraction offset by the stepping value */
 		*resampleOffset += resampleStep;

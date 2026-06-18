@@ -936,6 +936,12 @@ static inline float fixed_to_float(uint64_t fxd)
 		((fxd & FIXED_FRACTION_MASK) * (1.0f / FIXED_ONE)); /* Fraction part */
 }
 
+/* 0 = first, 1 = second */
+static inline float lerp(float first, float second, float coef)
+{
+	return first + (second - first) * coef;
+}
+
 #ifdef FAUDIO_DUMP_VOICES
 /* File writing structure */
 typedef size_t (FAUDIOCALL * FAudio_writefunc)(
