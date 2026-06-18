@@ -1166,7 +1166,6 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 	else
 	{
 		voice->src.curBufferOffsetDec = 0;
-		voice->src.curBufferOffset = 0;
 	}
 
 	/* Done with buffers, finally. */
