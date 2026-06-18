@@ -1163,10 +1163,6 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 			voice->src.curBufferOffset -= 1;
 		}
 	}
-	else
-	{
-		voice->src.curBufferOffsetDec = 0;
-	}
 
 	/* Done with buffers, finally. */
 	FAudio_PlatformUnlockMutex(voice->src.bufferLock);
