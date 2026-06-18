@@ -927,10 +927,6 @@ static inline void WriteWaveFormatExtensible(
 /* Helper macros to convert fixed to float */
 #define DOUBLE_TO_FIXED(dbl) \
 	((uint64_t) (dbl * FIXED_ONE + 0.5))
-#define FIXED_TO_DOUBLE(fxd) ( \
-	(double) (fxd >> FIXED_PRECISION) + /* Integer part */ \
-	((fxd & FIXED_FRACTION_MASK) * (1.0 / FIXED_ONE)) /* Fraction part */ \
-)
 #define FIXED_TO_FLOAT(fxd) ( \
 	(float) (fxd >> FIXED_PRECISION) + /* Integer part */ \
 	((fxd & FIXED_FRACTION_MASK) * (1.0f / FIXED_ONE)) /* Fraction part */ \

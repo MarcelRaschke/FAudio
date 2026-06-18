@@ -398,7 +398,7 @@ void FAudio_INTERNAL_ResampleGeneric(
 			*dst++ = (float) (
 				src[j] +
 				(src[j + channels] - src[j]) *
-				FIXED_TO_DOUBLE(cur)
+				FIXED_TO_FLOAT(cur)
 			);
 		}
 
@@ -436,7 +436,7 @@ void FAudio_INTERNAL_ResampleMono_Scalar(
 		*dst++ = (float) (
 			src[0] +
 			(src[1] - src[0]) *
-			FIXED_TO_DOUBLE(cur)
+			FIXED_TO_FLOAT(cur)
 		);
 
 		/* Increment fraction offset by the stepping value */
@@ -472,12 +472,12 @@ void FAudio_INTERNAL_ResampleStereo_Scalar(
 		*dst++ = (float) (
 			src[0] +
 			(src[2] - src[0]) *
-			FIXED_TO_DOUBLE(cur)
+			FIXED_TO_FLOAT(cur)
 		);
 		*dst++ = (float) (
 			src[1] +
 			(src[3] - src[1]) *
-			FIXED_TO_DOUBLE(cur)
+			FIXED_TO_FLOAT(cur)
 		);
 
 		/* Increment fraction offset by the stepping value */
