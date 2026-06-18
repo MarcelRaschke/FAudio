@@ -537,7 +537,6 @@ static void end_buffer(FAudioSourceVoice *voice)
 	if (eos)
 	{
 		voice->src.resampleOffset = 0;
-		voice->src.curBufferOffsetDec = 0;
 		voice->src.totalSamples = 0;
 	}
 
@@ -989,7 +988,7 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 	/* Base decode size, int to fixed... */
 	toDecode = voice->src.resampleSamples * voice->src.resampleStep;
 	/* ... rounded up based on current offset... */
-	toDecode += voice->src.curBufferOffsetDec + FIXED_FRACTION_MASK;
+	toDecode += (voice->src.resampleOffset & FIXED_FRACTION_MASK) + FIXED_FRACTION_MASK;
 	/* ... fixed to int, truncating extra fraction from rounding. */
 	toDecode >>= FIXED_PRECISION;
 
@@ -1065,7 +1064,7 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 	FAudio_INTERNAL_DecodeBuffers(voice, &toDecode);
 
 	/* Subtract any padding samples from the total, if applicable */
-	if (	voice->src.curBufferOffsetDec > 0 &&
+	if (	(voice->src.resampleOffset & FIXED_FRACTION_MASK) &&
 		voice->src.totalSamples > 0	)
 	{
 		voice->src.totalSamples -= 1;
@@ -1114,7 +1113,7 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 	/* int to fixed... */
 	toResample = toDecode << FIXED_PRECISION;
 	/* ... round back down based on current offset... */
-	toResample -= voice->src.curBufferOffsetDec;
+	toResample -= (voice->src.resampleOffset & FIXED_FRACTION_MASK);
 	/* ... but also ceil for any fraction value... */
 	toResample += FIXED_FRACTION_MASK;
 	/* ... undo step size, fixed to int. */
@@ -1150,15 +1149,10 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 	/* Update buffer offsets */
 	if (voice->src.queued_buffer_count)
 	{
-		/* Increment fixed offset by resample size, int to fixed... */
-		voice->src.curBufferOffsetDec += toResample * voice->src.resampleStep;
-		/* ... chop off any ints we got from the above increment */
-		voice->src.curBufferOffsetDec &= FIXED_FRACTION_MASK;
-
-		/* Dec >0? We need one frame from the past...
+		/* We need one frame from the past...
 		 * FIXME: We can't go back to a prev buffer though?
 		 */
-		if (	voice->src.curBufferOffsetDec > 0 &&
+		if (	(voice->src.resampleOffset & FIXED_FRACTION_MASK) &&
 			voice->src.curBufferOffset > 0	)
 		{
 			voice->src.curBufferOffset -= 1;
