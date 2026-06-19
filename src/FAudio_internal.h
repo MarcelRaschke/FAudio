@@ -88,7 +88,6 @@
 #define FAudio_PRIu64 PRIu64
 #define FAudio_PRIx64 PRIx64
 
-#define MAX_CHANNELS 8
 
 extern void FAudio_Log(char const *msg);
 
@@ -291,6 +290,8 @@ void LinkedList_RemoveEntry(
 );
 
 /* Internal FAudio Types */
+
+#define MAX_CHANNELS 8
 
 typedef enum FAudioVoiceType
 {
