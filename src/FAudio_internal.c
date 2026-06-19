@@ -538,6 +538,7 @@ static void end_buffer(FAudioSourceVoice *voice)
 	{
 		voice->src.resampleOffset = 0;
 		voice->src.totalSamples = 0;
+		FAudio_memset(voice->src.resample_taps, 0, sizeof(voice->src.resample_taps));
 	}
 
 	LOG_INFO(voice->audio, "Voice %p, finished with buffer %p", voice, buffer)
@@ -932,6 +933,7 @@ static void resize_resampled_audio_buffer(FAudio *audio, uint32_t samples)
 
 static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 {
+	int32_t prev_sample_count = voice->src.totalSamples;
 	/* Iterators */
 	uint32_t i;
 	/* Decode/Resample variables */
@@ -985,12 +987,32 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 		goto sendwork;
 	}
 
-	/* Base decode size, int to fixed... */
-	toDecode = voice->src.resampleSamples * voice->src.resampleStep;
-	/* ... rounded up based on current offset... */
-	toDecode += (voice->src.resampleOffset & FIXED_FRACTION_MASK) + FIXED_FRACTION_MASK;
-	/* ... fixed to int, truncating extra fraction from rounding. */
-	toDecode >>= FIXED_PRECISION;
+	if (voice->src.resampleStep == FIXED_ONE)
+	{
+		toDecode = voice->src.resampleSamples;
+	}
+	else
+	{
+		int64_t fixed_offset;
+
+		/* If (and only if) we need to resample, native will put one
+		 * sample of silence at the beginning of the stream.
+		 * Set the resample offset to -1.0 to account for this.
+		 * We have to do this now, rather than when initializing,
+		 * because the sample rate can change between then and now. */
+		if (!voice->src.resampleOffset)
+			voice->src.resampleOffset = -FIXED_ONE;
+
+		/* Calculate the source offset of the last sample in the stream. */
+		fixed_offset = voice->src.resampleOffset + voice->src.resampleSamples * voice->src.resampleStep;
+
+		/* Round up to the nearest integer. */
+		fixed_offset = (fixed_offset + FIXED_FRACTION_MASK) & ~FIXED_FRACTION_MASK;
+
+		/* The number of samples we need is that offset, plus one
+		 * (for 0-indexing; we are converting an offset to a count). */
+		toDecode = (fixed_offset >> FIXED_PRECISION) + 1 - voice->src.totalSamples;
+	}
 
 	/* First voice callback */
 	if (	voice->src.callback != NULL &&
@@ -1063,13 +1085,6 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 	/* Decode... */
 	FAudio_INTERNAL_DecodeBuffers(voice, &toDecode);
 
-	/* Subtract any padding samples from the total, if applicable */
-	if (	(voice->src.resampleOffset & FIXED_FRACTION_MASK) &&
-		voice->src.totalSamples > 0	)
-	{
-		voice->src.totalSamples -= 1;
-	}
-
 	/* Okay, we're done messing with client data */
 	if (	voice->src.callback != NULL &&
 		voice->src.callback->OnVoiceProcessingPassEnd != NULL)
@@ -1131,31 +1146,64 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 	}
 	else
 	{
-		resize_resampled_audio_buffer(
-				voice->audio,
-				voice->src.resampleSamples * voice->src.format->nChannels
-		);
+		unsigned int channels = voice->src.format->nChannels;
+		uint32_t tap_samples = 0;
+		float *dst;
+
+		resize_resampled_audio_buffer(voice->audio, voice->src.resampleSamples * channels);
+		dst = voice->audio->resampled_audio;
+
+		/* The first few samples need to be interpolated using the last
+		 * 1 or 2 samples from the previous quantum, stored as "taps".
+		 *
+		 * This is also true at the start of the stream. Native always
+		 * starts with silence, effectively resampling as if there were
+		 * a silent sample in front, despite the fact that this
+		 * contradicts the behaviour when the sample rates match. */
+
+		/* First, everything between the last 2 samples of the
+		 * previous quantum, if we didn't output them all yet. */
+		while ((voice->src.resampleOffset >> FIXED_PRECISION) < (prev_sample_count - 1))
+		{
+			float frac = fixed_to_float(voice->src.resampleOffset & FIXED_FRACTION_MASK);
+
+			for (unsigned int i = 0; i < channels; ++i)
+				*dst++ = lerp(voice->src.resample_taps[0][i], voice->src.resample_taps[1][i], frac);
+
+			voice->src.resampleOffset += voice->src.resampleStep;
+			++tap_samples;
+		}
+
+		/* Then the samples between the last sample of the
+		 * previous quantum and the first sample of this one. */
+		while ((voice->src.resampleOffset >> FIXED_PRECISION) < prev_sample_count)
+		{
+			float frac = fixed_to_float(voice->src.resampleOffset & FIXED_FRACTION_MASK);
+
+			for (unsigned int i = 0; i < channels; ++i)
+				*dst++ = lerp(voice->src.resample_taps[1][i], voice->audio->decoded_audio[i], frac);
+
+			voice->src.resampleOffset += voice->src.resampleStep;
+			++tap_samples;
+		}
+
 		voice->src.resample(
 			voice->audio->decoded_audio,
-			voice->audio->resampled_audio,
+			dst,
 			&voice->src.resampleOffset,
 			voice->src.resampleStep,
-			toResample,
-			(uint8_t) voice->src.format->nChannels
+			toResample - tap_samples,
+			channels
 		);
 		finalSamples = voice->audio->resampled_audio;
-	}
 
-	/* Update buffer offsets */
-	if (voice->src.queued_buffer_count)
-	{
-		/* We need one frame from the past...
-		 * FIXME: We can't go back to a prev buffer though?
-		 */
-		if (	(voice->src.resampleOffset & FIXED_FRACTION_MASK) &&
-			voice->src.curBufferOffset > 0	)
+		/* Actually this is probably wrong in the case we do get a
+		 * discontinuity, but that's going to sound awkward no matter
+		 * what. */
+		for (unsigned int i = 0; i < channels; ++i)
 		{
-			voice->src.curBufferOffset -= 1;
+			voice->src.resample_taps[0][i] = voice->audio->decoded_audio[toDecode - 2 * channels + i];
+			voice->src.resample_taps[1][i] = voice->audio->decoded_audio[toDecode - channels + i];
 		}
 	}
 

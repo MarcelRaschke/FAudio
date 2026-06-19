@@ -511,8 +511,9 @@ struct FAudioVoice
 			/* Resampler */
 			float resampleFreq;
 			uint64_t resampleStep;
-			uint64_t resampleOffset;
+			int64_t resampleOffset;
 			uint32_t curBufferOffset;
+			float resample_taps[2][MAX_CHANNELS];
 
 			/* WMA decoding */
 #ifdef HAVE_WMADEC
