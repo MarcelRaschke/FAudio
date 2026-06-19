@@ -1775,7 +1775,7 @@ uint32_t FAudio_INTERNAL_VoiceOutputFrequency(
 	return 0;
 }
 
-const float FAUDIO_INTERNAL_MATRIX_DEFAULTS[8][8][64] =
+const float FAUDIO_INTERNAL_MATRIX_DEFAULTS[MAX_CHANNELS][MAX_CHANNELS][64] =
 {
 	#include "matrix_defaults.inl"
 };

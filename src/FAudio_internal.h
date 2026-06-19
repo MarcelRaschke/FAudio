@@ -88,6 +88,8 @@
 #define FAudio_PRIu64 PRIu64
 #define FAudio_PRIx64 PRIx64
 
+#define MAX_CHANNELS 8
+
 extern void FAudio_Log(char const *msg);
 
 /* FIXME: Assuming little-endian! */
@@ -595,7 +597,7 @@ uint32_t FAudio_INTERNAL_VoiceOutputFrequency(
 	FAudioVoice *voice,
 	const FAudioVoiceSends *pSendList
 );
-extern const float FAUDIO_INTERNAL_MATRIX_DEFAULTS[8][8][64];
+extern const float FAUDIO_INTERNAL_MATRIX_DEFAULTS[MAX_CHANNELS][MAX_CHANNELS][64];
 
 bool array_reserve(FAudio *audio, void **elements, size_t *capacity, size_t count, size_t size);
 
