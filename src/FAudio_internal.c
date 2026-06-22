@@ -1198,8 +1198,8 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 		 * what. */
 		for (unsigned int i = 0; i < channels; ++i)
 		{
-			voice->src.resample_taps[0][i] = voice->audio->decoded_audio[toDecode - 2 * channels + i];
-			voice->src.resample_taps[1][i] = voice->audio->decoded_audio[toDecode - channels + i];
+			voice->src.resample_taps[0][i] = voice->audio->decoded_audio[(toDecode - 2) * channels + i];
+			voice->src.resample_taps[1][i] = voice->audio->decoded_audio[(toDecode - 1) * channels + i];
 		}
 	}
 
