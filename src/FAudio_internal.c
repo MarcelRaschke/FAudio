@@ -1111,6 +1111,14 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 	/* Nothing to resample? */
 	if (toDecode == 0)
 	{
+		if (voice->src.eos)
+		{
+			voice->src.totalSamples = 0;
+			voice->src.resampleOffset = 0;
+			FAudio_memset(voice->src.resample_taps, 0, sizeof(voice->src.resample_taps));
+			voice->src.eos = false;
+		}
+
 		FAudio_PlatformUnlockMutex(voice->src.bufferLock);
 		LOG_MUTEX_UNLOCK(voice->audio, voice->src.bufferLock)
 
