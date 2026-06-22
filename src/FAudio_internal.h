@@ -537,6 +537,7 @@ struct FAudioVoice
 
 			/* Dynamic */
 			uint8_t active;
+			bool eos;
 			float freqRatio;
 			uint64_t totalSamples;
 

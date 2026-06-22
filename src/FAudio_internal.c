@@ -535,11 +535,7 @@ static void end_buffer(FAudioSourceVoice *voice)
 #endif /* HAVE_WMADEC */
 
 	if (eos)
-	{
-		voice->src.resampleOffset = 0;
-		voice->src.totalSamples = 0;
-		FAudio_memset(voice->src.resample_taps, 0, sizeof(voice->src.resample_taps));
-	}
+		voice->src.eos = true;
 
 	LOG_INFO(voice->audio, "Voice %p, finished with buffer %p", voice, buffer)
 
@@ -1205,6 +1201,14 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 			voice->src.resample_taps[0][i] = voice->audio->decoded_audio[toDecode - 2 * channels + i];
 			voice->src.resample_taps[1][i] = voice->audio->decoded_audio[toDecode - channels + i];
 		}
+	}
+
+	if (voice->src.eos)
+	{
+		voice->src.totalSamples = 0;
+		voice->src.resampleOffset = 0;
+		FAudio_memset(voice->src.resample_taps, 0, sizeof(voice->src.resample_taps));
+		voice->src.eos = false;
 	}
 
 	/* Done with buffers, finally. */
