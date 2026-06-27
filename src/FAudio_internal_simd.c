@@ -498,6 +498,7 @@ void FAudio_INTERNAL_ResampleMono_SSE2(
 
 	/* This is the header, the Dest needs to be aligned to 16B */
 	header = (16 - ((size_t) dst) % 16) / 4;
+	header = FAudio_min(header, toResample); /* Resample size may not even _be_ 16B */
 	if (header == 4)
 	{
 		header = 0;
@@ -522,6 +523,11 @@ void FAudio_INTERNAL_ResampleMono_SSE2(
 		cur_scalar &= FIXED_FRACTION_MASK;
 	}
 
+	if (toResample == header)
+	{
+		/* Nothing left to do, was a tiny resample amount */
+		return;
+	}
 	toResample -= header;
 
 	/* initialising the varius cur
@@ -657,6 +663,7 @@ void FAudio_INTERNAL_ResampleStereo_SSE2(
 
 	/* This is the header, the Dest needs to be aligned to 16B */
 	header = (16 - ((size_t) dst) % 16) / 8;
+	header = FAudio_min(header, toResample); /* Resample size may not even _be_ 16B */
 	if (header == 2)
 	{
 		header = 0;
@@ -683,6 +690,11 @@ void FAudio_INTERNAL_ResampleStereo_SSE2(
 		cur_scalar &= FIXED_FRACTION_MASK;
 	}
 
+	if (toResample == header)
+	{
+		/* Nothing left to do, was a tiny resample amount */
+		return;
+	}
 	toResample -= header;
 
 	/* initialising the varius cur.
@@ -811,6 +823,7 @@ void FAudio_INTERNAL_ResampleMono_NEON(
 
 	/* This is the header, the Dest needs to be aligned to 16B */
 	header = (16 - ((size_t) dst) % 16) / 4;
+	header = FAudio_min(header, toResample); /* Resample size may not even _be_ 16B */
 	if (header == 4)
 	{
 		header = 0;
@@ -835,6 +848,11 @@ void FAudio_INTERNAL_ResampleMono_NEON(
 		cur_scalar &= FIXED_FRACTION_MASK;
 	}
 
+	if (toResample == header)
+	{
+		/* Nothing left to do, was a tiny resample amount */
+		return;
+	}
 	toResample -= header;
 
 	/* initialising the varius cur
@@ -970,6 +988,7 @@ void FAudio_INTERNAL_ResampleStereo_NEON(
 
 	/* This is the header, the Dest needs to be aligned to 16B */
 	header = (16 - ((size_t) dst) % 16) / 8;
+	header = FAudio_min(header, toResample); /* Resample size may not even _be_ 16B */
 	if (header == 2)
 	{
 		header = 0;
@@ -996,6 +1015,11 @@ void FAudio_INTERNAL_ResampleStereo_NEON(
 		cur_scalar &= FIXED_FRACTION_MASK;
 	}
 
+	if (toResample == header)
+	{
+		/* Nothing left to do, was a tiny resample amount */
+		return;
+	}
 	toResample -= header;
 
 	/* initialising the varius cur.
