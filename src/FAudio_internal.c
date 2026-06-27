@@ -1204,7 +1204,23 @@ static void FAudio_INTERNAL_MixSource(FAudioSourceVoice *voice)
 		/* Actually this is probably wrong in the case we do get a
 		 * discontinuity, but that's going to sound awkward no matter
 		 * what. */
-		for (unsigned int i = 0; i < channels; ++i)
+		if (toDecode < 2)
+		{
+			/* Ran into a case where toDecode was a single frame, so
+			 * we can just use the n-1 tap from the previous decode and use
+			 * it as our new n-2 tap.
+			 *
+			 * toDecode being 0 will return before any resampling can occur.
+			 * -flibit
+			 */
+			FAudio_assert(toDecode > 0);
+			for (unsigned int i = 0; i < channels; ++i)
+			{
+				voice->src.resample_taps[0][i] = voice->src.resample_taps[1][i];
+				voice->src.resample_taps[1][i] = voice->audio->decoded_audio[(toDecode - 1) * channels + i];
+			}
+		}
+		else for (unsigned int i = 0; i < channels; ++i)
 		{
 			voice->src.resample_taps[0][i] = voice->audio->decoded_audio[(toDecode - 2) * channels + i];
 			voice->src.resample_taps[1][i] = voice->audio->decoded_audio[(toDecode - 1) * channels + i];
