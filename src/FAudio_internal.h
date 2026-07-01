@@ -88,7 +88,6 @@
 #define FAudio_PRIu64 PRIu64
 #define FAudio_PRIx64 PRIx64
 
-
 extern void FAudio_Log(char const *msg);
 
 /* FIXME: Assuming little-endian! */
